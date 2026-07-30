@@ -23,6 +23,7 @@ export DBT_PROFILE="${DBT_PROFILE:-"mojap"}"
 export ENFORCE_LAKE_FORMATION="${ENFORCE_LAKE_FORMATION:-false}"
 export RUN_SOURCE_FRESHNESS="${RUN_SOURCE_FRESHNESS:-false}"
 export FULL_REFRESH="${FULL_REFRESH:-false}"
+export RUN_UNIT_TESTS="${RUN_UNIT_TESTS:-false}"
 
 function run_dbt() {
   local max_retries=3
@@ -174,6 +175,16 @@ function enforce_lake_formation() {
   fi
 }
 
+function run_unit_tests() {
+  if [ "${RUN_UNIT_TESTS}" = "True" ]; then
+    echo "Running unit tests"
+    dbt test -s test_type:unit --target "${DEPLOY_ENV}"
+    return 0
+  else
+    return 0
+  fi
+}
+
 echo "Creating virtual environment and installing dependencies"
 cd "${REPOSITORY_PATH}"
 
@@ -234,6 +245,8 @@ fi
 if [ "$WORKFLOW_NAME" = "nomis-daily" ]; then
   nomis_setup
 fi
+
+run_unit_tests
 
 if run_dbt; then
   echo "dbt run (partially) succeeded"
