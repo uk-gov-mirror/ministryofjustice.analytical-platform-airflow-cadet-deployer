@@ -7,6 +7,7 @@ export MOJAP_IMAGE_VERSION="${MOJAP_IMAGE_VERSION:-"unknown"}"
 export IS_DATASET_CHECK="${IS_DATASET_CHECK:-"False"}"
 export DATASET_TARGET="${DATASET_TARGET:-""}"
 export UNIQUE_IDS="${UNIQUE_IDS:-}"
+export RUN_IN_DF="${RUN_IN_DF:-"False"}"
 
 function dataset_check() {
   local -a command=(uv run check_run_results.py)
@@ -35,13 +36,20 @@ if [ "${IS_SUNDAY_DEPLOY}" = "True" ]; then
   ./date-checker.sh
 fi
 
-echo "=== Running clone-create-a-derived-table.sh ==="
-./clone-create-a-derived-table.sh
-
-echo "=== Am I running a dataset check? ${IS_DATASET_CHECK} ==="
-if [ "${IS_DATASET_CHECK}" = "True" ]; then
-  dataset_check
+if [ "${RUN_IN_DF}" != "True" ]; then
+  echo "=== Running clone-create-a-derived-table.sh ==="
+  ./clone-create-a-derived-table.sh
 fi
 
-echo "=== Running create-a-derived-table.sh ==="
-./create-a-derived-table.sh
+if [ "${RUN_IN_DF}" != "True" ]; then
+  echo "=== Am I running a dataset check? ${IS_DATASET_CHECK} ==="
+  if [ "${IS_DATASET_CHECK}" = "True" ]; then
+    dataset_check
+  fi
+
+  echo "=== Running create-a-derived-table.sh ==="
+  ./create-a-derived-table.sh
+else
+  echo "=== Running create-a-derived-table.sh and dataset_check ==="
+  ./create-a-derived-table.sh && dataset_check
+fi
