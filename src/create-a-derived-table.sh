@@ -257,7 +257,7 @@ import_run_artefacts
 # Optionally add 'state modified' to select criteria
 if $STATE_MODE; then
   echo "Adding state:modified to select criteria"
-  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified"
+  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified+"
 fi
 
 if [ "$RUN_SOURCE_FRESHNESS" = "True" ]; then
