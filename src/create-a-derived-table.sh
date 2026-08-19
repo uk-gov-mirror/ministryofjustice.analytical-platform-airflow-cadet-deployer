@@ -251,8 +251,11 @@ dbt deps
 
 echo "Running in mode [ ${MODE} ] for project [ ${DBT_PROJECT} ] to environment [ ${DEPLOY_ENV} ] with select criteria [ ${DBT_SELECT_CRITERIA} ] and thread count [ ${THREAD_COUNT} ] and vars [ ${VARS:-none} ]"
 
+# Always import run artefacts
+import_run_artefacts
+
+# Optionally add 'state modified' to select criteria
 if $STATE_MODE; then
-  import_run_artefacts
   export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified"
 fi
 
