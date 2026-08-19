@@ -24,6 +24,9 @@ export ENFORCE_LAKE_FORMATION="${ENFORCE_LAKE_FORMATION:-false}"
 export RUN_SOURCE_FRESHNESS="${RUN_SOURCE_FRESHNESS:-false}"
 export FULL_REFRESH="${FULL_REFRESH:-false}"
 export RUN_UNIT_TESTS="${RUN_UNIT_TESTS:-false}"
+export DEPLOY_MODIFIED_SEEDS="${DEPLOY_MODIFIED_SEEDS:-false}"
+export DBT_STATE_DIR="${DBT_STATE_DIR:-"./state"}"
+
 
 function run_dbt() {
   local max_retries=3
@@ -185,6 +188,21 @@ function run_unit_tests() {
   fi
 }
 
+function deploy_modified_seeds() {
+  # skip if no previous dbt state is available
+  [ -f "${DBT_STATE_DIR}/manifest.json" ] || return 0
+
+  dbt seed \
+    -s "resource_type:seed,state:modified" \
+    --state "${DBT_STATE_DIR}" \
+    --target "${DEPLOY_ENV}"
+
+  dbt test \
+    -s "resource_type:seed,state:modified" \
+    --state "${DBT_STATE_DIR}" \
+    --target "${DEPLOY_ENV}"
+}
+
 echo "Creating virtual environment and installing dependencies"
 cd "${REPOSITORY_PATH}"
 
@@ -247,6 +265,10 @@ if [ "$WORKFLOW_NAME" = "nomis-daily" ]; then
 fi
 
 run_unit_tests
+
+if [ "${DEPLOY_MODIFIED_SEEDS}" = "True" ]; then
+  deploy_modified_seeds
+fi
 
 if run_dbt; then
   echo "dbt run (partially) succeeded"
