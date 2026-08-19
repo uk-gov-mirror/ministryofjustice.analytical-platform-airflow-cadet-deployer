@@ -24,6 +24,7 @@ export ENFORCE_LAKE_FORMATION="${ENFORCE_LAKE_FORMATION:-false}"
 export RUN_SOURCE_FRESHNESS="${RUN_SOURCE_FRESHNESS:-false}"
 export FULL_REFRESH="${FULL_REFRESH:-false}"
 export RUN_UNIT_TESTS="${RUN_UNIT_TESTS:-false}"
+export CHECK_DUAL_MATERIALIZATION="${CHECK_DUAL_MATERIALIZATION:-false}"
 
 function run_dbt() {
   local max_retries=3
