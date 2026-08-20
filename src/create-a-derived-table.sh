@@ -294,15 +294,24 @@ if $STATE_MODE; then
   export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified+"
 fi
 
+# Init run_dbt
+run_dbt_exit=0
+
 if run_dbt; then
   echo "dbt run (partially) succeeded"
-  echo "Exporting run artefacts"
-  enforce_lake_formation
-  export_run_artefacts
-  exit 0
 else
   echo "dbt run failed after 5 retries"
-  echo "Exporting run artefacts"
-  export_run_artefacts
-  exit 1
+  run_dbt_exit=1
 fi
+
+# Always attempt cleanup tasks
+set +e
+
+# Enforce lake formation (if set)
+enforce_lake_formation
+
+echo "Exporting run artefacts"
+export_run_artefacts
+
+set -e
+exit "${run_dbt_exit}"
