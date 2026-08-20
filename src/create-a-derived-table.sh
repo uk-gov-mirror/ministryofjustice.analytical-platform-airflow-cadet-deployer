@@ -179,13 +179,10 @@ function enforce_lake_formation() {
 }
 
 function run_unit_tests() {
-  if [ "${RUN_UNIT_TESTS}" = "True" ]; then
-    echo "Running unit tests"
-    dbt test -s test_type:unit --target "${DEPLOY_ENV}"
-    return 0
-  else
-    return 0
-  fi
+ 
+  echo "Running unit tests"
+  dbt test -s test_type:unit --target "${DEPLOY_ENV}"
+
 }
 
 function deploy_modified_seeds() {
@@ -275,12 +272,6 @@ echo "Running in mode [ ${MODE} ] for project [ ${DBT_PROJECT} ] to environment 
 # Always import run artefacts
 import_run_artefacts
 
-# Optionally add 'state modified' to select criteria
-if $STATE_MODE; then
-  echo "Adding state:modified to select criteria"
-  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified+"
-fi
-
 if [ "$RUN_SOURCE_FRESHNESS" = "True" ]; then
   run_source_freshness
 fi
@@ -289,10 +280,18 @@ if [ "$WORKFLOW_NAME" = "nomis-daily" ]; then
   nomis_setup
 fi
 
-run_unit_tests
+if [ "${RUN_UNIT_TESTS}" = "True" ]; then
+  run_unit_tests
+fi
 
 if [ "${DEPLOY_MODIFIED_SEEDS}" = "True" ]; then
   deploy_modified_seeds
+fi
+
+# Optionally add 'state modified' to select criteria
+if $STATE_MODE; then
+  echo "Adding state:modified to select criteria"
+  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified+"
 fi
 
 if run_dbt; then
