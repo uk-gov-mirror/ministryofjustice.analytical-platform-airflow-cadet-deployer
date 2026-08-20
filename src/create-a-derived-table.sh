@@ -26,7 +26,7 @@ export FULL_REFRESH="${FULL_REFRESH:-false}"
 export RUN_UNIT_TESTS="${RUN_UNIT_TESTS:-false}"
 export DEPLOY_MODIFIED_SEEDS="${DEPLOY_MODIFIED_SEEDS:-false}"
 export DBT_STATE_DIR="${DBT_STATE_DIR:-"./state"}"
-
+export CHECK_DUAL_MATERIALIZATION="${CHECK_DUAL_MATERIALIZATION:-false}"
 
 function run_dbt() {
   local max_retries=3
@@ -203,6 +203,23 @@ function deploy_modified_seeds() {
     --target "${DEPLOY_ENV}"
 }
 
+function set_dual_materialization_env_vars() {
+  if [ "$CHECK_DUAL_MATERIALIZATION" = "True" ]; then
+    echo "Checking for models with dual materialization config"
+
+    while IFS= read -r variable; do
+      export "$variable"
+      echo "Added: $variable"
+    done < <(
+      dbt run-operation check_if_models_exist_by_tag \
+        --args '{"tag_names":["dual_materialization"], "tag_mode":"intersect"}' \
+        --target "$DEPLOY_ENV" \
+      | grep "|model_check|" \
+      | sed 's/.*|model_check|//'
+    )
+  fi
+}
+
 echo "Creating virtual environment and installing dependencies"
 cd "${REPOSITORY_PATH}"
 
@@ -248,6 +265,10 @@ dbt clean
 
 echo "Running dbt deps"
 dbt deps
+
+if [ "$CHECK_DUAL_MATERIALIZATION" = "True" ]; then
+  set_dual_materialization_env_vars
+fi
 
 echo "Running in mode [ ${MODE} ] for project [ ${DBT_PROJECT} ] to environment [ ${DEPLOY_ENV} ] with select criteria [ ${DBT_SELECT_CRITERIA} ] and thread count [ ${THREAD_COUNT} ] and vars [ ${VARS:-none} ]"
 
