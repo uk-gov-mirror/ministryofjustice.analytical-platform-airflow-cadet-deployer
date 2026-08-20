@@ -207,9 +207,9 @@ function set_dual_materialization_env_vars() {
   if [ "$CHECK_DUAL_MATERIALIZATION" = "True" ]; then
     echo "Checking for models with dual materialization config"
 
-    while IFS= read -r variable; do
-      export "$variable"
-      echo "Added: $variable"
+    while IFS='=' read -r name value; do
+      export "$name=$value"
+      echo "Added: $name=$value"
     done < <(
       dbt run-operation check_if_models_exist_by_tag \
         --args '{"tag_names":["dual_materialization"], "tag_mode":"intersect"}' \
