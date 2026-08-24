@@ -18,6 +18,8 @@ DEFAULT_UNIQUE_ID_YAML = Path(
     "./create-a-derived-table/scripts/data/airflow-dag-trigger.yaml"
 )
 
+DEFAULT_S3_BUCKET = "mojap-derived-tables"
+
 # dbt models finish with 'success'; tests finish with 'pass' or 'warn'.
 # All three are considered acceptable (non-failure) statuses.
 _ACCEPTABLE_STATUSES = frozenset({"success", "pass", "warn"})
@@ -119,10 +121,13 @@ def _load_run_results(path: Path) -> tuple[dict, str]:
 def _download_run_results_from_s3(
     deploy_env: str,
     workflow_name: str,
-    bucket: str = "mojap-derived-tables",
+    bucket: str,
 ) -> list[dict]:
     """Download run_results files from S3 and return parsed JSON objects."""
-    prefix = f"{deploy_env}/run_artefacts/{workflow_name}/latest/target/"
+    if bucket == DEFAULT_S3_BUCKET:
+        prefix = f"{deploy_env}/run_artefacts/{workflow_name}/latest/target/"
+    else:
+        prefix = f"data/{deploy_env}/run_artefacts/{workflow_name}/latest/target/"
     client = boto3.client("s3")
     paginator = client.get_paginator("list_objects_v2")
     keys: list[str] = []
@@ -168,6 +173,7 @@ def _index_statuses(run_results: dict) -> dict[str, str]:
 
 def assert_success(
     unique_ids: Iterable[str],
+    bucket: str,
     deploy_env: str | None = None,
     workflow_name: str | None = None,
 ) -> None:
@@ -179,7 +185,8 @@ def assert_success(
         raise ValueError(
             "DEPLOY_ENV and WORKFLOW_NAME are required to locate run_results files."
         )
-    run_results_list = _download_run_results_from_s3(deploy_env, workflow_name)
+
+    run_results_list = _download_run_results_from_s3(deploy_env, workflow_name, bucket)
 
     for run_results in run_results_list:
         statuses = _index_statuses(run_results)
@@ -216,6 +223,7 @@ def assert_success(
 
 
 def assert_all_models_tests_success(
+    bucket: str,
     deploy_env: str | None = None,
     workflow_name: str | None = None,
 ) -> None:
@@ -224,7 +232,8 @@ def assert_all_models_tests_success(
         raise ValueError(
             "DEPLOY_ENV and WORKFLOW_NAME are required to locate run_results files."
         )
-    run_results_list = _download_run_results_from_s3(deploy_env, workflow_name)
+
+    run_results_list = _download_run_results_from_s3(deploy_env, workflow_name, bucket)
 
     # Build the final status for each model/test node across all run_results
     # files (later files override earlier ones, matching retry semantics).
@@ -314,15 +323,18 @@ def main() -> int:
 
     deploy_env = os.environ.get("DEPLOY_ENV")
     workflow_name = os.environ.get("WORKFLOW_NAME")
+    bucket = os.environ.get("S3_BUCKET") or DEFAULT_S3_BUCKET
     logging.info(
-        "Loaded env DEPLOY_ENV=%s WORKFLOW_NAME=%s",
+        "Loaded env DEPLOY_ENV=%s WORKFLOW_NAME=%s S3_BUCKET=%s",
         deploy_env,
         workflow_name,
+        bucket,
     )
 
     if args.check_all_nodes:
         logging.info("CHECK_ALL_NODES is enabled - validating all model and test nodes")
         assert_all_models_tests_success(
+            bucket=bucket,
             deploy_env=deploy_env,
             workflow_name=workflow_name,
         )
@@ -359,6 +371,7 @@ def main() -> int:
     logging.info("Beginning run_results validation")
     assert_success(
         unique_ids,
+        bucket=bucket,
         deploy_env=deploy_env,
         workflow_name=workflow_name,
     )
