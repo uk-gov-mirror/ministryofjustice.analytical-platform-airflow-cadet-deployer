@@ -188,7 +188,6 @@ function enforce_lake_formation() {
 function run_unit_tests() {
   echo "Running unit tests"
   dbt test -s test_type:unit --target "${DEPLOY_ENV}"
-
 }
 
 function deploy_modified_seeds() {
