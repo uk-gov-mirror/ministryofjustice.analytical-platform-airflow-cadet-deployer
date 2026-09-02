@@ -24,6 +24,9 @@ export ENFORCE_LAKE_FORMATION="${ENFORCE_LAKE_FORMATION:-false}"
 export RUN_SOURCE_FRESHNESS="${RUN_SOURCE_FRESHNESS:-false}"
 export FULL_REFRESH="${FULL_REFRESH:-false}"
 export RUN_UNIT_TESTS="${RUN_UNIT_TESTS:-false}"
+export DEPLOY_MODIFIED_SEEDS="${DEPLOY_MODIFIED_SEEDS:-false}"
+export DBT_STATE_DIR="${DBT_STATE_DIR:-"./state"}"
+export CHECK_DUAL_MATERIALIZATION="${CHECK_DUAL_MATERIALIZATION:-false}"
 
 function run_dbt() {
   local max_retries=3
@@ -159,10 +162,17 @@ function export_run_artefacts() {
 }
 
 function import_run_artefacts() {
-  ARTEFACT_TARGET=${ARTEFACT_TARGET:-"target"}
+  ARTEFACT_TARGET=${ARTEFACT_TARGET:-"$DEPLOY_ENV"}
   export ARTEFACT_TARGET
 
-  python "${REPOSITORY_PATH}/scripts/import_run_artefacts.py" --target "$ARTEFACT_TARGET"
+  # User can override the import workflow if required,
+  # otherwise default to the current workflow name provided
+  IMPORT_WORKFLOW_NAME=${IMPORT_WORKFLOW_NAME:-"$WORKFLOW_NAME"}
+  export IMPORT_WORKFLOW_NAME
+
+  python "${REPOSITORY_PATH}/scripts/import_run_artefacts.py" \
+    --workflow "$IMPORT_WORKFLOW_NAME" \
+    --target "$ARTEFACT_TARGET"
 }
 
 function enforce_lake_formation() {
@@ -176,12 +186,41 @@ function enforce_lake_formation() {
 }
 
 function run_unit_tests() {
-  if [ "${RUN_UNIT_TESTS}" = "True" ]; then
-    echo "Running unit tests"
-    dbt test -s test_type:unit --target "${DEPLOY_ENV}"
-    return 0
-  else
-    return 0
+ 
+  echo "Running unit tests"
+  dbt test -s test_type:unit --target "${DEPLOY_ENV}"
+
+}
+
+function deploy_modified_seeds() {
+  # skip if no previous dbt state is available
+  [ -f "${DBT_STATE_DIR}/manifest.json" ] || return 0
+
+  dbt seed \
+    -s "resource_type:seed,state:modified" \
+    --state "${DBT_STATE_DIR}" \
+    --target "${DEPLOY_ENV}"
+
+  dbt test \
+    -s "resource_type:seed,state:modified" \
+    --state "${DBT_STATE_DIR}" \
+    --target "${DEPLOY_ENV}"
+}
+
+function set_dual_materialization_env_vars() {
+  if [ "$CHECK_DUAL_MATERIALIZATION" = "True" ]; then
+    echo "Checking for models with dual materialization config"
+
+    while IFS='=' read -r name value; do
+      export "$name=$value"
+      echo "Added: $name=$value"
+    done < <(
+      dbt run-operation check_if_models_exist_by_tag \
+        --args '{"tag_names":["dual_materialization"], "tag_mode":"intersect"}' \
+        --target "$DEPLOY_ENV" |
+        grep "|model_check|" |
+        sed 's/.*|model_check|//'
+    )
   fi
 }
 
@@ -231,12 +270,14 @@ dbt clean
 echo "Running dbt deps"
 dbt deps
 
+if [ "$CHECK_DUAL_MATERIALIZATION" = "True" ]; then
+  set_dual_materialization_env_vars
+fi
+
 echo "Running in mode [ ${MODE} ] for project [ ${DBT_PROJECT} ] to environment [ ${DEPLOY_ENV} ] with select criteria [ ${DBT_SELECT_CRITERIA} ] and thread count [ ${THREAD_COUNT} ] and vars [ ${VARS:-none} ]"
 
-if $STATE_MODE; then
-  import_run_artefacts
-  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified"
-fi
+# Always import run artefacts
+import_run_artefacts
 
 if [ "$RUN_SOURCE_FRESHNESS" = "True" ]; then
   run_source_freshness
@@ -246,17 +287,38 @@ if [ "$WORKFLOW_NAME" = "nomis-daily" ]; then
   nomis_setup
 fi
 
-run_unit_tests
+if [ "${RUN_UNIT_TESTS}" = "True" ]; then
+  run_unit_tests
+fi
+
+if [ "${DEPLOY_MODIFIED_SEEDS}" = "True" ]; then
+  deploy_modified_seeds
+fi
+
+# Optionally add 'state modified' to select criteria
+if $STATE_MODE; then
+  echo "Adding state:modified to select criteria"
+  export DBT_SELECT_CRITERIA="{$DBT_SELECT_CRITERIA},state:modified+"
+fi
+
+# Init run_dbt
+run_dbt_exit=0
 
 if run_dbt; then
   echo "dbt run (partially) succeeded"
-  echo "Exporting run artefacts"
-  enforce_lake_formation
-  export_run_artefacts
-  exit 0
 else
   echo "dbt run failed after 5 retries"
-  echo "Exporting run artefacts"
-  export_run_artefacts
-  exit 1
+  run_dbt_exit=1
 fi
+
+# Always attempt cleanup tasks
+set +e
+
+# Enforce lake formation (if set)
+enforce_lake_formation
+
+echo "Exporting run artefacts"
+export_run_artefacts
+
+set -e
+exit "${run_dbt_exit}"
